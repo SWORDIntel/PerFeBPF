@@ -4,20 +4,22 @@ The OOM Protector Daemon is a robust system utility designed to prevent Out-Of-M
 
 ## Features
 
-*   **eBPF-based Memory Anomaly Detection:** Utilizes eBPF (extended Berkeley Packet Filter) to monitor memory allocation patterns in real-time. It can detect and alert on processes exhibiting abnormal memory allocation rates, providing early warnings of potential memory exhaustion.
+*   **eBPF-based Memory Anomaly Detection:** Utilizes eBPF (extended Berkeley Packet Filter) to monitor memory allocation patterns in real-time. It can detect and alert on processes exhibiting abnormal memory allocation rates, providing early warnings of potential memory exhaustion. Anomalies are logged with process name for easier identification.
 *   **Cgroup Management for Critical Processes:** Automatically moves user-defined critical processes into a dedicated cgroup. This cgroup is configured with specific memory, CPU, and I/O weights (`memory.low`, `cpu.weight`, `io.weight`) to prioritize their resource access, protecting them from aggressive OOM killer actions.
 *   **NVIDIA GPU Memory Protection:** Monitors NVIDIA GPU memory usage. If GPU memory exceeds a configurable threshold, the daemon identifies and terminates the largest GPU memory-consuming processes that are *not* explicitly managed (i.e., not in the protected cgroup), thus freeing up GPU resources and preventing system instability due to GPU memory exhaustion.
 *   **Dynamic OOM Score Adjustment:** For non-critical processes, the daemon dynamically adjusts their `oom_score_adj` values based on their memory consumption. This helps the Linux OOM killer make more intelligent decisions, prioritizing the termination of less critical, high-memory-consuming processes.
 *   **NVIDIA Driver Monitoring:** Periodically checks for new NVIDIA driver updates and can automatically set the GPU power management mode to "Prefer Maximum Performance" for consistent performance.
 *   **Configurable:** All protection thresholds, managed processes, and monitoring settings are easily customizable via a `config.yaml` file.
 *   **Systemd Service Integration:** Designed to run as a systemd service, ensuring it starts automatically on boot and can be managed with standard systemctl commands.
-*   **Machine Learning Data Collection:** Can optionally log detailed eBPF memory anomaly events, process memory usage, and system available memory to a CSV file, facilitating data collection for future machine learning-based OOM prediction or analysis.
+*   **Graceful Shutdown:** Implements graceful shutdown procedures to ensure eBPF programs and other resources are properly cleaned up upon termination (e.g., via SIGINT or SIGTERM).
+*   **JSON Logging:** Provides an option to output logs in JSON format, making them easier for machine parsing and integration with log analysis tools.
+*   **Machine Learning Data Collection:** Can optionally log detailed eBPF memory anomaly events, process Resident Set Size (RSS), and system available memory to a CSV file, facilitating data collection for future machine learning-based OOM prediction or analysis.
 
 ## How it Works
 
 The OOM Protector Daemon operates by:
 
-1.  **eBPF Monitoring:** Attaches eBPF programs to kernel functions (like `__x64_sys_mmap`) to track memory allocations by processes. It uses a perf event buffer to send alerts to userspace when allocation thresholds are exceeded.
+1.  **eBPF Monitoring:** Attaches eBPF programs to kernel functions (like `__x64_sys_mmap`) to track memory allocations by processes. It uses a perf event buffer to send alerts to userspace when allocation thresholds are exceeded. For ML data collection, it also gathers process-specific (e.g., RSS) and system-wide memory metrics.
 2.  **Cgroup V2:** Creates and manages a dedicated cgroup (e.g., `oom_protector.slice`). Processes configured in `managed_processes` are moved into this cgroup. The cgroup's `memory.low` ensures that these processes always have a guaranteed minimum amount of memory available, while `cpu.weight` and `io.weight` manage their CPU and I/O priority.
 3.  **NVIDIA SMI:** Regularly queries `nvidia-smi` to get GPU memory statistics and process-level GPU memory usage.
 4.  **`/proc` Filesystem:** Interacts with the `/proc` filesystem to read process information (PID, command name, memory usage) and modify `oom_score_adj` values.
@@ -29,47 +31,29 @@ The OOM Protector Daemon operates by:
 
 *   **Go:** Go programming language (version 1.18 or newer recommended).
 *   **Linux Kernel:** A modern Linux kernel (5.4+) with eBPF support enabled.
-*   **libbpf-tools (or similar):** Development headers for `libbpf` might be needed for building eBPF programs. On Debian/Ubuntu: `apt install libbpf-dev`.
+*   **eBPF Build Tools:** Development headers for `libbpf` (`libbpf-dev` on Debian/Ubuntu) and `clang` for compiling BPF code. The `bpf2go` tool is also required for generating Go bindings from eBPF object files (automatically installed by `setup.sh`).
 *   **NVIDIA Drivers:** If GPU protection is desired, NVIDIA drivers and `nvidia-smi` must be installed and functional.
 
-### Build
+### Build and Install
+
+The project uses a `setup.sh` script to automate the build and installation process. This script handles:
+*   Installing necessary dependencies (clang, libbpf-dev, golang-go).
+*   Generating eBPF Go bindings using `bpf2go`.
+*   Building the main Go application.
+*   Installing the compiled application and its configuration to system directories.
+*   Setting up and starting the systemd service.
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/yourusername/oom_protector.git
-    cd oom_protector
+    git clone https://github.com/SWORDIntel/PerFeBPF.git
+    cd PerFeBPF
     ```
-2.  **Generate eBPF Go bindings:**
+    (Replace `SWORDIntel/PerFeBPF` with your actual repository path if different.)
+2.  **Run the setup script:**
     ```bash
-    go generate ./bpf
+    sudo ./setup.sh
     ```
-3.  **Build the Go application:**
-    ```bash
-    go build -o oom_protector .
-    ```
-
-### Systemd Service Setup
-
-1.  **Copy the executable:**
-    ```bash
-    sudo cp oom_protector /usr/local/bin/
-    ```
-    (Adjust path as necessary, ensure it matches `ExecStart` in the service file)
-2.  **Copy the service file:**
-    ```bash
-    sudo cp oom_protector.service /etc/systemd/system/
-    ```
-    **Note:** You might need to edit `oom_protector.service` to adjust the `ExecStart` and `WorkingDirectory` paths if you placed the executable elsewhere or if your username is not `john`.
-3.  **Reload systemd, enable, and start the service:**
-    ```bash
-    sudo systemctl daemon-reload
-    sudo systemctl enable oom_protector.service
-    sudo systemctl start oom_protector.service
-    ```
-4.  **Check status:**
-    ```bash
-    systemctl status oom_protector.service
-    ```
+    You will be prompted for your sudo password as the script performs system-wide installations.
 
 ## Configuration
 
@@ -144,7 +128,7 @@ Once installed and running as a systemd service:
 *   **Stop:** `sudo systemctl stop oom_protector.service`
 *   **Restart:** `sudo systemctl restart oom_protector.service`
 *   **Reload Config:** `sudo systemctl reload oom_protector.service` (after modifying `config.yaml`)
-*   **Check Logs:** `journalctl -u oom_protector.service` (or `tail -f /var/log/syslog` if JSON logs are disabled)
+*   **Check Logs:** `journalctl -u oom_protector.service` (Logs to syslog by default. If JSON logs are enabled in `config.yaml`, output will be JSON formatted to stderr/journald.)
 
 ## Contributing
 
