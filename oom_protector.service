@@ -1,0 +1,15 @@
+[Unit]
+Description=OOM, CPU, GPU, and Driver Protector Daemon
+# Start after the graphical environment is ready
+After=graphical.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/home/john/oom_protector/oom_protector
+WorkingDirectory=/home/john/oom_protector
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target

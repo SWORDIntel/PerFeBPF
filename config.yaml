@@ -1,0 +1,50 @@
+# Configuration for the OOM Protector Daemon
+
+# Settings for the protected cgroup.
+cgroup_settings:
+  name: "oom_protector.slice"
+  memory_low: 209715200 # 200MB
+  cpu_weight: 150
+  io_weight: 150
+
+# Critical processes to move into the protected cgroup.
+managed_processes:
+  - windsurf
+  - code
+  - subl
+  - vim
+  - nvim
+  - go
+
+# GPU memory protection.
+gpu_protection:
+  enabled: true
+  memory_threshold_percent: 90
+
+# NVIDIA driver monitor.
+nvidia_monitor:
+  enabled: true
+  set_performance_mode: true
+  check_driver_updates: true
+
+# eBPF-based Anomaly Detection
+ebpf_monitor:
+  enabled: true
+  # Log a CRITICAL warning if a managed process allocates more than this
+  # amount of memory within a 1-second window. Value is in MB.
+  allocation_threshold_mb_per_sec: 100
+
+# Dynamic OOM score adjustment for non-managed processes.
+dynamic_adjustment:
+  enabled: true
+  count: 3
+  score: 700
+
+# Machine Learning Data Collection
+machine_learning:
+  data_collection: true
+  log_path: "/var/log/oom_protector_ml_data.csv"
+
+# Logging configuration
+logging:
+  json_logs: true
