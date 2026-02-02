@@ -31,7 +31,7 @@ The OOM Protector Daemon operates by:
 
 *   **Go:** Go programming language (version 1.18 or newer recommended).
 *   **Linux Kernel:** A modern Linux kernel (5.4+) with eBPF support enabled.
-*   **eBPF Build Tools:** Development headers for `libbpf` (`libbpf-dev` on Debian/Ubuntu) and `clang` for compiling BPF code. The `bpf2go` tool is also required for generating Go bindings from eBPF object files (automatically installed by `setup.sh`).
+*   **eBPF Build Tools:** Development headers for `libbpf` (`libbpf-dev` on Debian/Ubuntu) and `clang` for compiling BPF code. The `bpf2go` tool is also required for generating Go bindings from eBPF object files (automatically installed by `setup.sh`). BPF source files (`bpf_monitor.c`, `vmlinux.h`) are located in the `bpf/` subdirectory.
 *   **NVIDIA Drivers:** If GPU protection is desired, NVIDIA drivers and `nvidia-smi` must be installed and functional.
 
 ### Build and Install
