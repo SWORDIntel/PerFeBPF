@@ -10,7 +10,7 @@ char __license[] SEC("license") = "GPL";
 #define ONE_SECOND_NS 1000000000ULL
 
 // Data structure for alerts sent to userspace
-struct event {
+struct bpfEvent {
 	u32 pid;
 	u64 allocation_size;
     u64 threshold;
@@ -25,12 +25,19 @@ struct {
 
 // Map to store PIDs of processes we are managing
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, MAX_MANAGED_PIDS);
-	__type(key, u32); // PID
-	__type(value, u8); // 1 if managed
+        __uint(type, BPF_MAP_TYPE_HASH);
+        __uint(max_entries, MAX_MANAGED_PIDS);
+        __type(key, u32); // PID
+        __type(value, u8); // 1 if managed
 } managed_pids SEC(".maps");
 
+// Dummy map to ensure bpfEvent type is preserved in BTF
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, u32);
+    __type(value, struct bpfEvent);
+} btf_keep SEC(".maps");
 // Map to track allocation stats per PID
 struct allocation_stat {
     u64 last_seen_ns;
@@ -92,7 +99,7 @@ int BPF_KPROBE(mmap_probe, struct pt_regs *regs, unsigned long addr, unsigned lo
 
     // If allocation exceeds threshold, send an event
     if (new_stats.bytes_allocated > *threshold) {
-        struct event e = {};
+        struct bpfEvent e = {};
         e.pid = pid;
         e.allocation_size = new_stats.bytes_allocated;
         e.threshold = *threshold;

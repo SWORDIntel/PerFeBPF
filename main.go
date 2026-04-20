@@ -89,7 +89,7 @@ var (
 	configFile      = "config.yaml"
 	cgroupPath      string
 	lastDriverCheck time.Time
-	bpfObjs         *bpfObjects
+	objs            *bpfObjects
 )
 
 const cgroupRoot = "/sys/fs/cgroup"
@@ -119,8 +119,8 @@ func main() {
 	go func() {
 		<-stopper
 		log.Println("Received shutdown signal, cleaning up...")
-		if bpfObjs != nil {
-			bpfObjs.Close()
+		if &objs != nil {
+			objs.Close()
 			log.Println("BPF objects closed.")
 		}
 		os.Exit(0)
@@ -152,14 +152,12 @@ func main() {
 
 // --- eBPF Functions ---
 func loadAndAttachBPF() error {
-	objs, err := loadBpf()
+	var err error
+	objs = new(bpfObjects)
+	err = loadBpfObjects(objs, nil)
+	kp, err := link.Kprobe("__x64_sys_mmap", objs.MmapProbe, nil)
 	if err != nil {
-		return fmt.Errorf("loading bpf objects: %w", err)
-	}
-	bpfObjs = objs
-	kp, err := link.Kprobe("__x64_sys_mmap", bpfObjs.MmapProbe, nil)
-	if err != nil {
-		bpfObjs.Close()
+		objs.Close()
 		return fmt.Errorf("attaching kprobe: %w", err)
 	}
 	// We don't close the link so it stays active.
@@ -168,7 +166,7 @@ func loadAndAttachBPF() error {
 }
 
 func handleBpfEvents() {
-	reader, err := perf.NewReader(bpfObjs.Events, os.Getpagesize())
+	reader, err := perf.NewReader(objs.Events, os.Getpagesize())
 	if err != nil {
 		log.Printf("ERROR: Failed to create eBPF perf event reader: %v", err)
 		return
@@ -176,7 +174,7 @@ func handleBpfEvents() {
 	defer reader.Close()
 
 	log.Println("Listening for eBPF allocation anomaly events...")
-	var event bpfEvent
+	var event bpfBpfEvent
 	for {
 		record, err := reader.Read()
 		if err != nil {
@@ -202,7 +200,7 @@ func handleBpfEvents() {
 	}
 }
 
-func logBpfEventForML(event bpfEvent) {
+func logBpfEventForML(event bpfBpfEvent) {
 	if !config.MachineLearning.DataCollection {
 		return
 	}
@@ -251,14 +249,14 @@ func logBpfEventForML(event bpfEvent) {
 func updateBpfMaps(currentConfig *Config) {
 	thresholdBytes := uint64(currentConfig.EbpfMonitor.AllocationThresholdMBPerSec) * 1024 * 1024
 	key := uint32(0)
-	if err := bpfObjs.ConfigMap.Put(key, thresholdBytes); err != nil {
+	if err := objs.ConfigMap.Put(key, thresholdBytes); err != nil {
 		log.Printf("ERROR: Failed to update eBPF config map: %v", err)
 	}
 
 	pids := getManagedPIDs(currentConfig)
 	var one uint8 = 1
 	for pid := range pids {
-		if err := bpfObjs.ManagedPids.Put(uint32(pid), one); err != nil {
+		if err := objs.ManagedPids.Put(uint32(pid), one); err != nil {
 			log.Printf("WARN: Failed to update eBPF managed_pids map for PID %d: %v", pid, err)
 		}
 	}
